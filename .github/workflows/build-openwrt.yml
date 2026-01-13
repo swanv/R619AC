@@ -59,20 +59,18 @@ jobs:
         # 【修改1】替换为国内阿里云源（加速依赖安装）
         sudo sed -i 's/archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
         sudo sed -i 's/security.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
-        sudo -E apt-get -qq update
-        sudo -E apt-get -qq install $(curl -fsSL git.io/depends-ubuntu-2004)
-        # 问题1：替换失效的curl依赖列表（直接列出Ubuntu 22.04编译依赖）
+        sudo -E apt-get -qq update --fix-missing
+        sudo -E apt-get -qq install -f
+        # 安装OpenWrt编译核心依赖（build-essential已包含libstdc++6-dev）
         sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pip libpython3-dev qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
-        # 问题2：Ubuntu 22.04中libstdc++的开发包名是libstdc++6-dev（原libstdc++-dev已废弃）
-        sudo -E apt-get -qq install rustc cargo libstdc++6-dev libclang-dev
-        # 【修改2】添加rust依赖+Clang+C++标准库（解决smartdns和头文件缺失）
-        sudo -E apt-get -qq install rustc cargo libstdc++-dev libclang-dev
-        cargo install bindgen-cli
-        echo "export PATH=$HOME/.cargo/bin:$PATH" >> ~/.bashrc
-        source ~/.bashrc
-        # 配置rust国内镜像（加速rust包下载）
+        # 仅安装rust+clang（无需单独装libstdc++6-dev）
+        sudo -E apt-get -qq install rustc cargo libclang-dev
+        # 配置rust国内镜像并安装bindgen-cli
         echo "export RUSTUP_DIST_SERVER=https://rsproxy.cn" >> ~/.bashrc
         echo "export RUSTUP_UPDATE_ROOT=https://rsproxy.cn/rustup" >> ~/.bashrc
+        source ~/.bashrc
+        cargo install bindgen-cli
+        echo "export PATH=$HOME/.cargo/bin:$PATH" >> ~/.bashrc
         source ~/.bashrc
         # 原有逻辑保留
         sudo -E apt-get -qq autoremove --purge
