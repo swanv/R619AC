@@ -30,3 +30,5 @@ https://github.com/coolsnowwolf/lede/issues 这里提交issue，提交issues请�
 3.才疏学浅、时间有限，回答不了任何技术问题哈，只是定时或不定时更新下大雕的源码编译。  
 4.若需要上传至releases，需要自行设置并修改GITHUB_TOKEN: ${{ secrets.LEO_TOKEN }}等地方，当中的LEO_TOKEN。否则只能在Actions里查看和下载编译的固件。  
 5.固件内容供技术参考，不承担相关责任。管理地址：192.168.5.200，密码：password
+
+2026年1月3日，克隆过后，进行第一次编译
