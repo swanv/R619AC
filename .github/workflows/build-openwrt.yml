@@ -9,11 +9,12 @@
 # Lisence: MIT
 # Author: P3TERX
 # Blog: https://p3terx.com
+
 #=================================================
 name: Build OpenWrt R619AC
 
 on:
-  repository_dispatch:
+#  repository_dispatch:
 #  release:
 #    types: published
 #  push:
@@ -21,8 +22,7 @@ on:
 #      - master
 #    paths:
 #      - 'r619ac.config'
-  schedule:
-    - cron: 30 2 */20 * *
+   workflow_dispatch:
 #          分 时 日 月 周5
 #   - cron: 0 8 */15 * *
 #  watch:
