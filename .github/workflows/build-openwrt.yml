@@ -61,8 +61,8 @@ jobs:
         sudo sed -i 's/security.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
         sudo -E apt-get -qq update
         sudo -E apt-get -qq install $(curl -fsSL git.io/depends-ubuntu-2004)
-        # 【修改2】添加rust依赖（解决smartdns的rust-bindgen缺失问题）
-        sudo -E apt-get -qq install rustc cargo
+        # 【修改2】添加rust依赖+Clang+C++标准库（解决smartdns和头文件缺失）
+        sudo -E apt-get -qq install rustc cargo libstdc++-dev libclang-dev
         # 配置rust国内镜像（加速rust包下载）
         echo "export RUSTUP_DIST_SERVER=https://rsproxy.cn" >> ~/.bashrc
         echo "export RUSTUP_UPDATE_ROOT=https://rsproxy.cn/rustup" >> ~/.bashrc
@@ -110,7 +110,10 @@ jobs:
         # 2. 移除冲突插件（fchomo/bypass任选其一，避免递归依赖）
         sed -i '/CONFIG_PACKAGE_luci-app-fchomo/d' .config
         sed -i '/CONFIG_PACKAGE_luci-app-bypass/d' .config
-        # 3. 同步配置（解决"configuration is out of sync"警告）
+        # 3. 禁用node包（解决node编译失败）
+        sed -i '/CONFIG_PACKAGE_node/d' .config
+        sed -i '/CONFIG_PACKAGE_luci-app-node/d' .config
+        # 4. 同步配置（解决"configuration is out of sync"警告）
         make defconfig
         make oldconfig
 
@@ -136,7 +139,8 @@ jobs:
         cd openwrt
         echo -e "$(nproc) thread compile"
         make -j$(nproc) || make -j1 || make -j1 V=s
-        echo "::set-output name=status::success"
+        # 【修改5】修复set-output废弃问题（改用GITHUB_OUTPUT）
+        echo "status=success" >> $GITHUB_OUTPUT
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
         [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
@@ -159,7 +163,8 @@ jobs:
         cd openwrt/bin/targets/*/*
         rm -rf packages
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-        echo "::set-output name=status::success"
+        # 【修改6】修复set-output废弃问题
+        echo "status=success" >> $GITHUB_OUTPUT
 
     - name: Upload firmware directory
       uses: actions/upload-artifact@main
@@ -175,7 +180,8 @@ jobs:
         curl -fsSL git.io/file-transfer | sh
         ./transfer cow --block 2621440 -s -p 64 --no-progress ${FIRMWARE} 2>&1 | tee cowtransfer.log
         echo "::warning file=cowtransfer.com::$(cat cowtransfer.log | grep https)"
-        echo "::set-output name=url::$(cat cowtransfer.log | grep https | cut -f3 -d" ")"
+        # 【修改7】修复set-output废弃问题
+        echo "url=$(cat cowtransfer.log | grep https | cut -f3 -d" ")" >> $GITHUB_OUTPUT
 
     - name: Upload firmware to WeTransfer
       id: wetransfer
@@ -184,17 +190,19 @@ jobs:
         curl -fsSL git.io/file-transfer | sh
         ./transfer wet -s -p 16 --no-progress ${FIRMWARE} 2>&1 | tee wetransfer.log
         echo "::warning file=wetransfer.com::$(cat wetransfer.log | grep https)"
-        echo "::set-output name=url::$(cat wetransfer.log | grep https | cut -f3 -d" ")"
+        # 【修改8】修复set-output废弃问题
+        echo "url=$(cat wetransfer.log | grep https | cut -f3 -d" ")" >> $GITHUB_OUTPUT
 
     - name: Generate release tag
       id: tag
       if: env.UPLOAD_RELEASE == 'true' && !cancelled()
       run: |
-        echo "::set-output name=release_tag::$(date +"%Y.%m.%d-%H%M")"
+        # 【修改9】修复set-output废弃问题
+        echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
         touch release.txt
         [ $UPLOAD_COWTRANSFER = true ] && echo "🔗 [Cowtransfer](${{ steps.cowtransfer.outputs.url }})" >> release.txt
         [ $UPLOAD_WETRANSFER = true ] && echo "🔗 [WeTransfer](${{ steps.wetransfer.outputs.url }})" >> release.txt
-        echo "::set-output name=status::success"
+        echo "status=success" >> $GITHUB_OUTPUT
 
     - name: Upload firmware to release
       uses: softprops/action-gh-release@v1
