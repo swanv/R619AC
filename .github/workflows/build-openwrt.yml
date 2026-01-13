@@ -6,27 +6,14 @@
 #
 # https://github.com/P3TERX/Actions-OpenWrt
 # Description: Build OpenWrt using GitHub Actions
-# Lisence: MIT
-# Author: P3TERX
-# Blog: https://p3terx.com
+#
 
-#=================================================
 name: Build OpenWrt R619AC
 
 on:
-#  repository_dispatch:
-#  release:
-#    types: published
-#  push:
-#    branches:
-#      - master
-#    paths:
-#      - 'r619ac.config'
-   workflow_dispatch:  # 保留手动触发（核心）
-#          分 时 日 月 周5
-#   - cron: 0 8 */15 * *
-#  watch:
-#    types: started
+  workflow_dispatch:
+#  schedule:
+#    - cron: 0 8 */15 * *
 
 env:
   REPO_URL: https://github.com/coolsnowwolf/lede
@@ -56,23 +43,21 @@ jobs:
         DEBIAN_FRONTEND: noninteractive
       run: |
         sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
-        # 【修改1】替换为国内阿里云源（加速依赖安装）
+        # 替换为国内阿里云源
         sudo sed -i 's/archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
         sudo sed -i 's/security.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
         sudo -E apt-get -qq update --fix-missing
         sudo -E apt-get -qq install -f
-        # 安装OpenWrt编译核心依赖（build-essential已包含libstdc++6-dev）
-        sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pip libpython3-dev qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
-        # 仅安装rust+clang（无需单独装libstdc++6-dev）
-        sudo -E apt-get -qq install rustc cargo libclang-dev
-        # 配置rust国内镜像并安装bindgen-cli
+        # 安装核心依赖 (加入 clang llvmlld 供 rust 使用)
+        sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pip libpython3-dev qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev libclang-dev clang llvm lld
+        
+        # 配置 rust 环境 (保留你的设置，以防万一)
         echo "export RUSTUP_DIST_SERVER=https://rsproxy.cn" >> ~/.bashrc
         echo "export RUSTUP_UPDATE_ROOT=https://rsproxy.cn/rustup" >> ~/.bashrc
-        source ~/.bashrc
+        curl --proto '=https' --tlsv1.2 -sSf https://rsproxy.cn/rustup-init.sh | sh -s -- -y
+        source $HOME/.cargo/env
         cargo install bindgen-cli
-        echo "export PATH=$HOME/.cargo/bin:$PATH" >> ~/.bashrc
-        source ~/.bashrc
-        # 原有逻辑保留
+        
         sudo -E apt-get -qq autoremove --purge
         sudo -E apt-get -qq clean
         sudo timedatectl set-timezone "$TZ"
@@ -83,8 +68,8 @@ jobs:
       working-directory: /workdir
       run: |
         df -hT $PWD
-        # 【修改3】添加镜像代理（解决源码克隆超时）
-        git clone --depth=1 $REPO_URL -b $REPO_BRANCH openwrt || git clone --depth=1 https://mirror.ghproxy.com/$REPO_URL -b $REPO_BRANCH openwrt
+        # 添加重试机制防止 clone 失败
+        git clone --depth=1 $REPO_URL -b $REPO_BRANCH openwrt || (git clone --depth=1 https://mirror.ghproxy.com/$REPO_URL -b $REPO_BRANCH openwrt)
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
     - name: Load custom feeds
@@ -98,7 +83,13 @@ jobs:
       run: cd openwrt && ./scripts/feeds update -a
 
     - name: Install feeds
-      run: cd openwrt && ./scripts/feeds install -a
+      run: |
+        cd openwrt
+        ./scripts/feeds install -a
+        # 【关键修改】尝试显式安装 rust-bindgen 和 golang 到 feeds 环境中
+        # 如果 feeds 中存在这些包，这步能解决 Makefile 找不到 host 依赖的问题
+        ./scripts/feeds install rust-bindgen || echo "rust-bindgen not found in feeds, ignoring"
+        ./scripts/feeds install golang || echo "golang not found in feeds, ignoring"
 
     - name: Load custom configuration
       run: |
@@ -107,33 +98,27 @@ jobs:
         chmod +x $DIY_P2_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
-        # 【修改4】修复递归依赖冲突（核心！）
-        # 1. 禁用iptables，强制启用firewall4（解决passwall/fchomo/bypass冲突）
+        
+        # 修复递归依赖冲突逻辑
         sed -i '/CONFIG_PACKAGE_iptables/d' .config
         echo "CONFIG_PACKAGE_firewall4=y" >> .config
         echo "# CONFIG_PACKAGE_iptables is not set" >> .config
-        # 2. 移除冲突插件（fchomo/bypass任选其一，避免递归依赖）
+        
         sed -i '/CONFIG_PACKAGE_luci-app-fchomo/d' .config
         sed -i '/CONFIG_PACKAGE_luci-app-bypass/d' .config
-        # 3. 禁用node包（解决node编译失败）
+        
         sed -i '/CONFIG_PACKAGE_node/d' .config
         sed -i '/CONFIG_PACKAGE_luci-app-node/d' .config
-        # 4. 同步配置（解决"configuration is out of sync"警告）
+        
+        # 补充：尝试在 .config 生成前移除可能导致问题的 smartdns 依赖 (如果上述 install feeds 失败)
+        # sed -i 's/DEPENDS:=.*+rust-bindgen\/host.*/DEPENDS:=/' package/openwrt-packages/smartdns/Makefile || true
+        
         make defconfig
-        make oldconfig
-
-    - name: SSH connection to Actions
-#      uses: csexton/debugger-action@master
-      if: env.SSH_ACTIONS == 'true'
-      uses: P3TERX/ssh2actions@v1.0.0
-#     uses: mxschmitt/action-tmate@v3
-      timeout-minutes: 30
-
+        
     - name: Download package
       id: package
       run: |
         cd openwrt
-        make defconfig
         make download -j8
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
@@ -144,7 +129,6 @@ jobs:
         cd openwrt
         echo -e "$(nproc) thread compile"
         make -j$(nproc) || make -j1 || make -j1 V=s
-        # 【修改5】修复set-output废弃问题（改用GITHUB_OUTPUT）
         echo "status=success" >> $GITHUB_OUTPUT
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
         [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
@@ -165,12 +149,11 @@ jobs:
       id: organize
       if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
-        # 新增：检查固件目录是否存在
         FIRMWARE_DIR="openwrt/bin/targets/*/*"
         if [ ! -d $FIRMWARE_DIR ]; then
           echo "❌ 固件编译失败，未生成目标目录：$FIRMWARE_DIR"
           echo "status=failed" >> $GITHUB_OUTPUT
-          exit 0  # 优雅退出，不阻断后续清理步骤
+          exit 0 
         fi
         cd $FIRMWARE_DIR
         rm -rf packages
@@ -191,7 +174,6 @@ jobs:
         curl -fsSL git.io/file-transfer | sh
         ./transfer cow --block 2621440 -s -p 64 --no-progress ${FIRMWARE} 2>&1 | tee cowtransfer.log
         echo "::warning file=cowtransfer.com::$(cat cowtransfer.log | grep https)"
-        # 【修改7】修复set-output废弃问题
         echo "url=$(cat cowtransfer.log | grep https | cut -f3 -d" ")" >> $GITHUB_OUTPUT
 
     - name: Upload firmware to WeTransfer
@@ -201,14 +183,12 @@ jobs:
         curl -fsSL git.io/file-transfer | sh
         ./transfer wet -s -p 16 --no-progress ${FIRMWARE} 2>&1 | tee wetransfer.log
         echo "::warning file=wetransfer.com::$(cat wetransfer.log | grep https)"
-        # 【修改8】修复set-output废弃问题
         echo "url=$(cat wetransfer.log | grep https | cut -f3 -d" ")" >> $GITHUB_OUTPUT
 
     - name: Generate release tag
       id: tag
       if: env.UPLOAD_RELEASE == 'true' && !cancelled()
       run: |
-        # 【修改9】修复set-output废弃问题
         echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
         touch release.txt
         [ $UPLOAD_COWTRANSFER = true ] && echo "🔗 [Cowtransfer](${{ steps.cowtransfer.outputs.url }})" >> release.txt
