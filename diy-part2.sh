@@ -4,56 +4,50 @@
 # File name: diy-part2.sh
 # Description: OpenWrt DIY script part 2 (After Update feeds)
 # Lisence: MIT
-# Author: P3TERX
-# Blog: https://p3terx.com
-# sed '1,3s/my/your/g'
-# sed -i '93s/0xf60000/0x1fb0000/g' target/
-# chmod -R 755 files
+#============================================================
 
-#=================================================
-# Modify default IP
-# sed -i 's/15744/32448/g'
+# --- 1. 网络与主机名设置 ---
+
+# 修改默认 IP 为 192.168.5.200
 sed -i 's/192.168.1.1/192.168.5.200/g' package/base-files/files/bin/config_generate
 
-# Modify hostname
+# 修改主机名为 R619ac
 sed -i 's/OpenWrt/R619ac/g' package/base-files/files/bin/config_generate
 
+# --- 2. 主题管理 ---
 
+# 建议：将 git clone 移至 diy-part1.sh。
+# 如果必须在此处下载，请创建一个独立的目录，避免依赖 package/lean 是否存在
+mkdir -p package/custom
+# 下载 OpenTomcat 主题
+git clone https://github.com/Leo-Jo-My/luci-theme-opentomcat.git package/custom/luci-theme-opentomcat
+# 下载 Edge 主题
+git clone https://github.com/garypang13/luci-theme-edge.git package/custom/luci-theme-edge
 
-# 取消bootstrap为默认主题
-sed -i '/set luci.main.mediaurlbase=\/luci-static\/bootstrap/d' feeds/luci/themes/luci-theme-bootstrap/root/etc/uci-defaults/30_luci-theme-bootstrap
+# [重要] 设置默认主题
+# 你下载了两个主题，必须指定一个作为默认（这里以 Edge 为例，如果想用 opentomcat 请自行替换名称）
+# 逻辑：修改 luci 的 Makefile，把默认的 bootstrap 替换为 luci-theme-edge
+sed -i 's/luci-theme-bootstrap/luci-theme-edge/g' feeds/luci/collections/luci/Makefile
 
-# 删除原主题包
+# 移除原厂 argon 主题（如果存在），防止冲突
 rm -rf package/lean/luci-theme-argon
-# rm -rf openwrt/package/lean/luci-theme-netgear
 
-# 添加新的主题包
-# git clone https://github.com/jerrykuku/luci-theme-argon.git package/lean/luci-theme-argon
-# git clone https://github.com/sypopo/luci-theme-atmaterial.git package/lean/luci-theme-atmaterial
-# git clone https://github.com/sypopo/luci-theme-argon-mc.git package/lean/luci-theme-argon-mc
-git clone https://github.com/Leo-Jo-My/luci-theme-opentomcat.git package/lean/luci-theme-opentomcat
-git clone https://github.com/garypang13/luci-theme-edge.git package/lean/luci-theme-edge
-# 更新
-# ./scripts/feeds update -a && ./scripts/feeds install -a
+# --- 3. 版本号与个性化 ---
 
-##########
-# Modify the version number
-sed -i "s/OpenWrt /Leopard build $(TZ=UTC-8 date "+%Y.%m.%d") @ OpenWrt /g" package/lean/default-settings/files/zzz-default-settings
+# 修改版本号 (增加日期标识)
+# 增加文件检查，防止非 Lede 源码导致报错
+zzz_settings="package/lean/default-settings/files/zzz-default-settings"
+if [ -f "$zzz_settings" ]; then
+    sed -i "s/OpenWrt /Leopard build $(TZ=UTC-8 date "+%Y.%m.%d") @ OpenWrt /g" "$zzz_settings"
+fi
 
-# Modify default theme
-# sed -i 's/luci-theme-bootstrap/luci-theme-argon/g' feeds/luci/collections/luci/Makefile
+# --- 4. 内核编译用户设置 (.config) ---
+# 注意：此时 .config 可能尚未完全生成，追加设置是安全的
 
-# Add kernel build user
-[ -z $(grep "CONFIG_KERNEL_BUILD_USER=" .config) ] &&
-    echo 'CONFIG_KERNEL_BUILD_USER="Leopard"' >>.config ||
-    sed -i 's@\(CONFIG_KERNEL_BUILD_USER=\).*@\1$"Leopard"@' .config
+# 设置编译用户
+sed -i '/CONFIG_KERNEL_BUILD_USER/d' .config
+echo 'CONFIG_KERNEL_BUILD_USER="Leopard"' >> .config
 
-# Add kernel build domain
-[ -z $(grep "CONFIG_KERNEL_BUILD_DOMAIN=" .config) ] &&
-    echo 'CONFIG_KERNEL_BUILD_DOMAIN="GitHub Actions"' >>.config ||
-    sed -i 's@\(CONFIG_KERNEL_BUILD_DOMAIN=\).*@\1$"GitHub Actions"@' .config
-
-
-# 删除lean里的百度文本（编译失败），增加百度PCS-web
-# rm -rf package/lean/baidupcs-web
-# git clone https://github.com/liuzhuoling2011/baidupcs-web.git package/lean/baidupcs-web
+# 设置编译域名
+sed -i '/CONFIG_KERNEL_BUILD_DOMAIN/d' .config
+echo 'CONFIG_KERNEL_BUILD_DOMAIN="GitHub Actions"' >> .config
