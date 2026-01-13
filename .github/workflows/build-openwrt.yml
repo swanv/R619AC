@@ -63,6 +63,9 @@ jobs:
         sudo -E apt-get -qq install $(curl -fsSL git.io/depends-ubuntu-2004)
         # 【修改2】添加rust依赖+Clang+C++标准库（解决smartdns和头文件缺失）
         sudo -E apt-get -qq install rustc cargo libstdc++-dev libclang-dev
+        cargo install bindgen-cli
+        echo "export PATH=$HOME/.cargo/bin:$PATH" >> ~/.bashrc
+        source ~/.bashrc
         # 配置rust国内镜像（加速rust包下载）
         echo "export RUSTUP_DIST_SERVER=https://rsproxy.cn" >> ~/.bashrc
         echo "export RUSTUP_UPDATE_ROOT=https://rsproxy.cn/rustup" >> ~/.bashrc
@@ -160,10 +163,16 @@ jobs:
       id: organize
       if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
-        cd openwrt/bin/targets/*/*
+        # 新增：检查固件目录是否存在
+        FIRMWARE_DIR="openwrt/bin/targets/*/*"
+        if [ ! -d $FIRMWARE_DIR ]; then
+          echo "❌ 固件编译失败，未生成目标目录：$FIRMWARE_DIR"
+          echo "status=failed" >> $GITHUB_OUTPUT
+          exit 0  # 优雅退出，不阻断后续清理步骤
+        fi
+        cd $FIRMWARE_DIR
         rm -rf packages
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-        # 【修改6】修复set-output废弃问题
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: Upload firmware directory
