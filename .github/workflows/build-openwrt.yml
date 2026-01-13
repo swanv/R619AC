@@ -22,7 +22,7 @@ on:
 #      - master
 #    paths:
 #      - 'r619ac.config'
-   workflow_dispatch:
+   workflow_dispatch:  # 保留手动触发（核心）
 #          分 时 日 月 周5
 #   - cron: 0 8 */15 * *
 #  watch:
@@ -56,8 +56,18 @@ jobs:
         DEBIAN_FRONTEND: noninteractive
       run: |
         sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        # 【修改1】替换为国内阿里云源（加速依赖安装）
+        sudo sed -i 's/archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
+        sudo sed -i 's/security.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
         sudo -E apt-get -qq update
         sudo -E apt-get -qq install $(curl -fsSL git.io/depends-ubuntu-2004)
+        # 【修改2】添加rust依赖（解决smartdns的rust-bindgen缺失问题）
+        sudo -E apt-get -qq install rustc cargo
+        # 配置rust国内镜像（加速rust包下载）
+        echo "export RUSTUP_DIST_SERVER=https://rsproxy.cn" >> ~/.bashrc
+        echo "export RUSTUP_UPDATE_ROOT=https://rsproxy.cn/rustup" >> ~/.bashrc
+        source ~/.bashrc
+        # 原有逻辑保留
         sudo -E apt-get -qq autoremove --purge
         sudo -E apt-get -qq clean
         sudo timedatectl set-timezone "$TZ"
@@ -68,7 +78,8 @@ jobs:
       working-directory: /workdir
       run: |
         df -hT $PWD
-        git clone $REPO_URL -b $REPO_BRANCH openwrt
+        # 【修改3】添加镜像代理（解决源码克隆超时）
+        git clone --depth=1 $REPO_URL -b $REPO_BRANCH openwrt || git clone --depth=1 https://mirror.ghproxy.com/$REPO_URL -b $REPO_BRANCH openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
     - name: Load custom feeds
@@ -91,6 +102,17 @@ jobs:
         chmod +x $DIY_P2_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
+        # 【修改4】修复递归依赖冲突（核心！）
+        # 1. 禁用iptables，强制启用firewall4（解决passwall/fchomo/bypass冲突）
+        sed -i '/CONFIG_PACKAGE_iptables/d' .config
+        echo "CONFIG_PACKAGE_firewall4=y" >> .config
+        echo "# CONFIG_PACKAGE_iptables is not set" >> .config
+        # 2. 移除冲突插件（fchomo/bypass任选其一，避免递归依赖）
+        sed -i '/CONFIG_PACKAGE_luci-app-fchomo/d' .config
+        sed -i '/CONFIG_PACKAGE_luci-app-bypass/d' .config
+        # 3. 同步配置（解决"configuration is out of sync"警告）
+        make defconfig
+        make oldconfig
 
     - name: SSH connection to Actions
 #      uses: csexton/debugger-action@master
