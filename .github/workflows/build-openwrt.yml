@@ -9,8 +9,8 @@ name: Build OpenWrt R619AC
 on:
   repository_dispatch:
   workflow_dispatch:  # 【修复1】加回手动触发按钮
-  schedule:
-    - cron: 30 2 */20 * *
+  #schedule:
+  #  - cron: 30 2 */20 * *
 
 env:
   REPO_URL: https://github.com/coolsnowwolf/lede
