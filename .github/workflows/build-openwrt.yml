@@ -43,21 +43,23 @@ jobs:
         DEBIAN_FRONTEND: noninteractive
       run: |
         sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
-        # 替换为国内阿里云源
-        sudo sed -i 's/archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
-        sudo sed -i 's/security.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
-        sudo -E apt-get -qq update --fix-missing
-        sudo -E apt-get -qq install -f
-        # 安装核心依赖 (加入 clang llvmlld 供 rust 使用)
-        sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pip libpython3-dev qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev libclang-dev clang llvm lld
+        sudo docker image prune --all --force
+        sudo -E apt-get -qq update
+        # 1. 替换为国内阿里云源 (加快依赖下载速度)
+        #sudo sed -i 's/archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
+        #sudo sed -i 's/security.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
         
-        # 配置 rust 环境 (保留你的设置，以防万一)
-        echo "export RUSTUP_DIST_SERVER=https://rsproxy.cn" >> ~/.bashrc
-        echo "export RUSTUP_UPDATE_ROOT=https://rsproxy.cn/rustup" >> ~/.bashrc
-        curl --proto '=https' --tlsv1.2 -sSf https://rsproxy.cn/rustup-init.sh | sh -s -- -y
-        source $HOME/.cargo/env
-        cargo install bindgen-cli
-        
+        # 2. 【核心修改】严格遵循 LEDE README 安装官方指定依赖
+        # 不要随意添加 rustc/cargo 等，防止环境污染
+        sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+        bzip2 ccache clang cmake cpio curl device-tree-compiler flex gawk gcc-multilib g++-multilib gettext \
+        genisoimage git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev \
+        libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev \
+        libreadline-dev libssl-dev libtool llvm lrzsz libnsl-dev ninja-build p7zip p7zip-full patch pkgconf \
+        python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion \
+        swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+
+        # 3. 清理空间
         sudo -E apt-get -qq autoremove --purge
         sudo -E apt-get -qq clean
         sudo timedatectl set-timezone "$TZ"
@@ -68,8 +70,9 @@ jobs:
       working-directory: /workdir
       run: |
         df -hT $PWD
-        # 添加重试机制防止 clone 失败
-        git clone --depth=1 $REPO_URL -b $REPO_BRANCH openwrt || (git clone --depth=1 https://mirror.ghproxy.com/$REPO_URL -b $REPO_BRANCH openwrt)
+        # 使用镜像加速下载，增加重试机制
+        # git clone --depth=1 $REPO_URL -b $REPO_BRANCH openwrt || (git clone --depth=1 https://mirror.ghproxy.com/$REPO_URL -b $REPO_BRANCH openwrt)
+        git clone $REPO_URL -b $REPO_BRANCH openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
     - name: Load custom feeds
@@ -83,13 +86,7 @@ jobs:
       run: cd openwrt && ./scripts/feeds update -a
 
     - name: Install feeds
-      run: |
-        cd openwrt
-        ./scripts/feeds install -a
-        # 【关键修改】尝试显式安装 rust-bindgen 和 golang 到 feeds 环境中
-        # 如果 feeds 中存在这些包，这步能解决 Makefile 找不到 host 依赖的问题
-        ./scripts/feeds install rust-bindgen || echo "rust-bindgen not found in feeds, ignoring"
-        ./scripts/feeds install golang || echo "golang not found in feeds, ignoring"
+      run: cd openwrt && ./scripts/feeds install -a
 
     - name: Load custom configuration
       run: |
@@ -99,22 +96,9 @@ jobs:
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
         
-        # 修复递归依赖冲突逻辑
-        sed -i '/CONFIG_PACKAGE_iptables/d' .config
-        echo "CONFIG_PACKAGE_firewall4=y" >> .config
-        echo "# CONFIG_PACKAGE_iptables is not set" >> .config
-        
-        sed -i '/CONFIG_PACKAGE_luci-app-fchomo/d' .config
-        sed -i '/CONFIG_PACKAGE_luci-app-bypass/d' .config
-        
-        sed -i '/CONFIG_PACKAGE_node/d' .config
-        sed -i '/CONFIG_PACKAGE_luci-app-node/d' .config
-        
-        # 补充：尝试在 .config 生成前移除可能导致问题的 smartdns 依赖 (如果上述 install feeds 失败)
-        # sed -i 's/DEPENDS:=.*+rust-bindgen\/host.*/DEPENDS:=/' package/openwrt-packages/smartdns/Makefile || true
-        
-        make defconfig
-        
+        # 生成标准配置文件
+        # make defconfig
+
     - name: Download package
       id: package
       run: |
@@ -127,8 +111,13 @@ jobs:
       id: compile
       run: |
         cd openwrt
-        echo -e "$(nproc) thread compile"
-        make -j$(nproc) || make -j1 || make -j1 V=s
+        echo "Starting compile..."
+        
+        # 【核心修改】严格遵循官方建议：第一次编译使用单线程
+        # 这虽然慢，但能极大减少 'Error 1' 和多线程竞争导致的失败
+        # 如果这次成功了，下次你可以改回 -j$(nproc)
+        make V=s -j1
+        #make -j$(nproc) || make -j1 || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
         [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
