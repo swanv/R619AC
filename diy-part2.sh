@@ -33,9 +33,6 @@ sed -i 's/luci-theme-bootstrap/luci-theme-edge/g' feeds/luci/collections/luci/Ma
 rm -rf package/lean/luci-theme-argon
 # 移除 feed 中的 kmod 防止冲突
 rm -rf package/feeds/packages/kmod
-# 修复 filebrowser 编译：删除 upx 压缩命令
-# (UPX 在某些环境中缺失会导致编译失败，且压缩不是必须的)
-sed -i '/upx/d' package/luci-app-filebrowser/filebrowser/Makefile
 
 # --- 3. 版本号与个性化 ---
 
