@@ -81,6 +81,9 @@ jobs:
         chmod +x $DIY_P1_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P1_SH
+        # 【核心修复1】强制补全配置，不弹窗
+        # make defconfig 会根据 .config 自动计算依赖并补全缺失项
+        make defconfig
 
     - name: Update feeds
       run: cd openwrt && ./scripts/feeds update -a
@@ -112,7 +115,11 @@ jobs:
       run: |
         cd openwrt
         echo "Starting compile..."
+        # 【核心修复2】设置虚拟终端变量，防止 ncurses 报错
+        export TERM=linux
         
+        # 【核心修复3】再次确保配置是最新的（防止 download 步骤后配置变动）
+        make defconfig
         # 【核心修改】严格遵循官方建议：第一次编译使用单线程
         # 这虽然慢，但能极大减少 'Error 1' 和多线程竞争导致的失败
         # 如果这次成功了，下次你可以改回 -j$(nproc)
