@@ -12,13 +12,13 @@
 # 如果只想用里面的某些插件，建议下载后删除冲突的包。
 
 # 1. 克隆 kenzok8 的软件包库
-git clone https://github.com/kenzok8/openwrt-packages.git package/openwrt-packages
-git clone https://github.com/kenzok8/small.git package/small
+# git clone https://github.com/kenzok8/openwrt-packages.git package/openwrt-packages
+# git clone https://github.com/kenzok8/small.git package/small
 
 # 【关键修复步骤】
 # 删除第三方库中的 smartdns，解决 "rust-bindgen" 缺失和版本冲突问题
 # 让编译系统使用 OpenWrt/Lede 自带的 smartdns
-rm -rf package/openwrt-packages/smartdns
+# rm -rf package/openwrt-packages/smartdns
 
 # 建议：删除其他可能的高风险冲突包（可选，视情况而定）
 # rm -rf package/openwrt-packages/luci-app-smartdns
