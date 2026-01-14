@@ -24,14 +24,11 @@
 # rm -rf package/openwrt-packages/luci-app-smartdns
 # rm -rf package/openwrt-packages/v2ray-geodata
 
-# 2. 其他插件
-git clone https://github.com/open-mesh-mirror/batman-adv.git package/batman-adv
+# 2. 其他插件 这个是组网用的
+# git clone https://github.com/open-mesh-mirror/batman-adv.git package/batman-adv
 
 # 3. 增加 luci-app-unblockneteasemusic，来源 immortalwrt
-git clone https://github.com/immortalwrt/luci-app-unblockneteasemusic.git package/luci-app-unblockneteasemusic
-
-# 4. 增加 filebrowser
-git clone https://github.com/immortalwrt/openwrt-filebrowser.git package/luci-app-filebrowser
+#git clone https://github.com/immortalwrt/luci-app-unblockneteasemusic.git package/luci-app-unblockneteasemusic
 
 # 5. 修改 feeds 源 (原脚本注释掉的部分，如果不需要可以保持现状)
 # sed -i 's/^#\(.*helloworld\)/\1/' feeds.conf.default
