@@ -9,7 +9,7 @@
 # --- 1. 网络与主机名设置 ---
 
 # 修改默认 IP 为 192.168.5.200
-sed -i 's/192.168.1.1/192.168.5.200/g' package/base-files/files/bin/config_generate
+sed -i 's/192.168.1.1/192.168.100.1/g' package/base-files/files/bin/config_generate
 
 # 修改主机名为 R619ac
 sed -i 's/OpenWrt/R619ac/g' package/base-files/files/bin/config_generate
