@@ -32,7 +32,7 @@ sed -i 's/luci-theme-bootstrap/luci-theme-edge/g' feeds/luci/collections/luci/Ma
 # 移除原厂 argon 主题（如果存在），防止冲突
 rm -rf package/lean/luci-theme-argon
 # 移除 feed 中的 kmod 防止冲突
-rm -rf package/feeds/packages/kmod
+#rm -rf package/feeds/packages/kmod
 
 # --- 3. 版本号与个性化 ---
 
